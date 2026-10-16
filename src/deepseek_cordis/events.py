@@ -160,14 +160,13 @@ class Events:
             with self._ctx.scope():
                 await _resolve(callback(*args))
 
-        # Preserve the pinned source's historical telemetry mode 'emit'.
         results = await asyncio.gather(
-            *(run(callback) for callback in self._dispatch("emit", name, args, filter_)),
+            *(run(callback) for callback in self._dispatch("parallel", name, args, filter_)),
             return_exceptions=True,
         )
         errors = [result for result in results if isinstance(result, BaseException)]
         if errors:
-            raise BaseExceptionGroup("parallel event dispatch failed", errors)
+            raise BaseExceptionGroup(f"parallel event dispatch failed for {name!r}", errors)
 
     async def serial(self, name: str, *args: object, filter_: EventFilter | None = None) -> object:
         """Await in order; first bail result or error ends the dispatch."""

@@ -554,3 +554,32 @@ def test_live_fiber_cannot_be_reused_on_another_event_loop() -> None:
 
     asyncio.run(first())
     asyncio.run(second())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stale_failure", [False, True])
+async def test_restart_during_setup_runs_new_revision(stale_failure: bool) -> None:
+    """Cordis c261dd2: stale work cannot satisfy or fail a newer restart."""
+    root = Context()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    calls: list[str] = []
+
+    async def setup(ctx: Context, config: object) -> object:
+        calls.append("setup")
+        if len(calls) == 1:
+            entered.set()
+            await release.wait()
+            if stale_failure:
+                raise ValueError("superseded setup")
+        return lambda: calls.append("cleanup")
+
+    fiber = root.plugin(setup)
+    await asyncio.wait_for(entered.wait(), 1)
+    fiber.restart()
+    release.set()
+    await asyncio.wait_for(fiber.wait(), 1)
+    assert calls.count("setup") == 2
+    assert fiber.state is FiberState.ACTIVE
+    assert fiber.error is None
+    await root.fiber.dispose()

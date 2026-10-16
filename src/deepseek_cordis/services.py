@@ -6,7 +6,7 @@ import asyncio
 import inspect
 import logging
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .effects import _active_effects
@@ -48,6 +48,8 @@ class _Binding:
     generation: int
     check: Callable[[], bool] | None
     label: ScopeLabel
+    dependents: set[Fiber] = field(default_factory=set)
+    released: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 class ServiceRegistry:
@@ -124,26 +126,28 @@ class ServiceRegistry:
             async def remove() -> None:
                 if self._bindings.get(key) is binding:
                     del self._bindings[key]
-                affected = self.notify((key,))
-                # Structural ancestors already own this teardown. Joining them
-                # here would await our own cleanup through a dependency cycle.
-                ancestors: set[Fiber] = {ctx.fiber}
-                parent = ctx.fiber
-                while parent is not self._root.fiber:
-                    parent = parent.parent.fiber
-                    ancestors.add(parent)
-                ancestors.update(_executing.get())
-                ancestors.update(effect.owner for effect in _active_effects.get())
-                await asyncio.gather(
-                    *(fiber._settle() for fiber in affected if fiber not in ancestors),
-                    return_exceptions=True,
-                )
+                self.notify((key,))
+                await self.wait_dependents(binding)
                 if ctx.fiber._owned_bindings.get(key) is binding:
                     del ctx.fiber._owned_bindings[key]
 
             return remove
 
         return ctx.effect(register, f'ctx.provide("{name}")')
+
+    async def wait_dependents(self, binding: _Binding) -> None:
+        # Ancestors and currently executing owners cannot join themselves through
+        # a provision they are disposing. Their structural teardown already owns it.
+        excluded: set[Fiber] = {binding.fiber}
+        parent = binding.fiber
+        while parent is not self._root.fiber:
+            parent = parent.parent.fiber
+            excluded.add(parent)
+        excluded.update(_executing.get())
+        excluded.update(effect.owner for effect in _active_effects.get())
+        while binding.dependents - excluded:
+            binding.released.clear()
+            await binding.released.wait()
 
     def refresh(self, fiber: Fiber) -> None:
         if fiber.uid is None:

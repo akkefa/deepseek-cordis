@@ -697,3 +697,93 @@ async def test_reentrant_availability_check_can_dispose_consumer_safely() -> Non
     assert_state(fiber, FiberState.DISPOSED)
     assert root.registry.size == 0
     await remove(service)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["dispose", "restart", "root"])
+@pytest.mark.parametrize("fail_cleanup", [False, True])
+async def test_provider_resources_outlive_dependent_cleanup(
+    action: str, fail_cleanup: bool
+) -> None:
+    """Cordis 9cad5e8: dependents finish before provider effects are released."""
+    root = Context()
+    timeline: list[str] = []
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    resource = {"closed": False}
+
+    def provider(ctx: Context, config: object) -> object:
+        resource["closed"] = False
+        ctx.provide("resource", resource)
+
+        def close() -> None:
+            resource["closed"] = True
+            timeline.append("provider closed")
+
+        return close
+
+    def consumer(ctx: Context, config: object) -> object:
+        async def cleanup() -> None:
+            entered.set()
+            await release.wait()
+            assert ctx.require("resource") is resource
+            assert not resource["closed"]
+            timeline.append("consumer finished")
+            if fail_cleanup:
+                raise ValueError("consumer cleanup failed")
+
+        return cleanup
+
+    owner = await root.plugin(provider)
+    dependent = await root.inject(["resource"], consumer)
+    if action == "dispose":
+        task = asyncio.ensure_future(owner.dispose())
+    elif action == "restart":
+
+        async def restart() -> None:
+            await owner.restart()
+
+        task = asyncio.create_task(restart())
+    else:
+        task = asyncio.ensure_future(root.fiber.dispose())
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        assert not resource["closed"]
+        assert not task.done()
+    finally:
+        release.set()
+    await asyncio.wait_for(task, 1)
+    assert timeline[:2] == ["consumer finished", "provider closed"]
+    assert len(dependent.cleanup_errors) == int(fail_cleanup)
+    await root.fiber.dispose()
+
+
+@pytest.mark.asyncio
+async def test_withdrawal_waits_for_consumer_already_removed_from_registry() -> None:
+    """A disposed mount still owns its committed bindings until cleanup ends."""
+    root = Context()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    binding = root.provide("resource", object())
+
+    def consumer(ctx: Context, config: object) -> object:
+        async def cleanup() -> None:
+            entered.set()
+            await release.wait()
+            assert ctx.require("resource") is not None
+
+        return cleanup
+
+    dependent = await root.inject(["resource"], consumer)
+    disposing = asyncio.ensure_future(dependent.dispose())
+    await asyncio.wait_for(entered.wait(), 1)
+    withdrawing = asyncio.create_task(remove(binding))
+    try:
+        # Let removal enter its join while the already-unregistered consumer waits.
+        for _ in range(5):
+            await asyncio.sleep(0)
+        assert not withdrawing.done()
+    finally:
+        release.set()
+    await asyncio.wait_for(asyncio.gather(disposing, withdrawing), 1)
+    await root.fiber.dispose()

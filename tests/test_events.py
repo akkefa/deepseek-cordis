@@ -466,12 +466,12 @@ def test_dispatch_telemetry_does_not_recurse_and_observes_before_delivery() -> N
 
 
 @pytest.mark.asyncio
-async def test_parallel_telemetry_preserves_historical_emit_mode() -> None:
+async def test_parallel_telemetry_reports_parallel_mode() -> None:
     root = Context()
     calls: list[object] = []
     root.on("internal/dispatch", lambda mode, *args: calls.append(mode))
     await root.parallel("event")
-    assert calls == ["emit"]
+    assert calls == ["parallel"]
     await root.fiber.dispose()
 
 
@@ -653,4 +653,29 @@ async def test_async_dispatch_rejects_indirect_awaitable_result_cycles() -> None
     root.on("event", lambda: first)
     with pytest.raises(ValueError, match="cyclic"):
         await root.serial("event")
+    await root.fiber.dispose()
+
+
+@pytest.mark.asyncio
+async def test_parallel_failure_identifies_event_and_preserves_original_errors() -> None:
+    root = Context()
+    first = ValueError("first")
+    second = RuntimeError("second")
+    completed: list[str] = []
+
+    def fail() -> None:
+        raise first
+
+    async def fail_later() -> None:
+        await asyncio.sleep(0)
+        completed.append("second")
+        raise second
+
+    root.on("orders/updated", fail)
+    root.on("orders/updated", fail_later)
+    with pytest.raises(ExceptionGroup) as caught:
+        await root.parallel("orders/updated")
+    assert caught.value.message == "parallel event dispatch failed for 'orders/updated'"
+    assert caught.value.exceptions == (first, second)
+    assert completed == ["second"]
     await root.fiber.dispose()

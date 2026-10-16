@@ -104,7 +104,8 @@ continuation is unsupported and leaves the usual Python unawaited coroutine.
 Non-internal events first emit internal/dispatch(mode, name, args_tuple, filter_).
 That observer may alter registrations before the public snapshot is selected.
 Events beginning internal/ skip telemetry to prevent recursion. Parallel reports
-mode emit, preserving the pinned diagnostic quirk. The final slot carries the
+mode parallel. Grouped failures include the event name; exception members retain
+their original identities and registration order. The final slot carries the
 Python filter instead of JS thisArg. Listener interception and scoped update,
 plugin/status/service/config producers remain future kernel work. This bus does
 not claim those hooks merely because users can register their names.

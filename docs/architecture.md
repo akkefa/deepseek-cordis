@@ -106,7 +106,7 @@ ordinary child dispatch is not automatically isolated.
 | Mode | Inspected Harness behavior |
 |---|---|
 | emit | Calls listeners synchronously, ignores returns; synchronous throw stops dispatch |
-| parallel | Runs all, waits for allSettled, aggregates errors; dispatch telemetry reports emit |
+| parallel | Runs all, waits for allSettled, aggregates errors; dispatch telemetry reports parallel (upstream fix adopted 2026-10-16) |
 | serial | Awaits in order and stops at first bail result |
 | bail | Synchronous first bail result |
 | waterfall | Shared zero-argument next continuation; omission vetoes remaining chain |

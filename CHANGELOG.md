@@ -1,6 +1,19 @@
 # Changelog
 
-## 0.1.0 — Unreleased
+## 0.1.1 
+
+- Providers now wait for committed dependent cleanup before closing resources,
+  including consumers already removed from the registry.
+
+- Restart revisions prevent superseded setup from satisfying or failing a newer
+  restart. Added lifecycle regressions and a source-indexed upstream audit.
+  
+- Adopted Cordis parallel-event diagnostics fixes: telemetry now reports
+  `parallel` instead of `emit`, and grouped failures identify the event.
+  Observers matching the old mode or exact error text need updating.
+  Listener scheduling, exception members and public signatures are unchanged.
+
+## 0.1.0 
 
 - Completed the deepseek-cordis rebrand: Python imports and source package are
   deepseek_cordis, repository/documentation links target akkefa/deepseek-cordis,

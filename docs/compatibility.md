@@ -9,6 +9,13 @@ vendored Cordis 4.0.4. Test baseline: upstream
 `56b3d4f725681cf4556c1a8695a709cc3b6eed74`. Newer upstream tests are comparisons,
 not silently substituted contracts.
 
+## Selected newer fixes
+
+The [2026-10-16 upstream audit](upstream-audit-2026-10-16.md) records selective
+provider-cleanup, restart-revision and event-diagnostic fixes, their supplemental
+source-indexed tests, and compatibility risks. The primary target and original
+72-case catalog stay pinned. The current full suite contains 398 tests.
+
 ## Current behavior matrix
 
 | Cordis feature | deepseek-cordis | Evidence / boundary |

@@ -111,6 +111,7 @@ class Fiber:
         self._counter = 0
         self._state = FiberState.ACTIVE if root else FiberState.PENDING
         self._epoch: Epoch = () if root else None
+        self._revision = 0
         self._dependency_epoch: Epoch = self._epoch
         self._task: asyncio.Task[None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -242,14 +243,16 @@ class Fiber:
         if old is not state and (old is FiberState.ACTIVE or state is FiberState.ACTIVE):
             self.ctx._services.owner_changed(self)
 
-    def _setup_effect(self, epoch: Epoch) -> Effect:
+    def _setup_effect(self, epoch: Epoch, revision: int) -> Effect:
         setup = self._setup
         assert setup is not None
         return Effect(
             self,
             lambda: setup(self.ctx, self.config),
             "plugin setup",
-            _valid=lambda: self.uid is not None and self._epoch == epoch,
+            _valid=lambda: (
+                self.uid is not None and self._epoch == epoch and self._revision == revision
+            ),
         )
 
     async def _drive(self) -> None:
@@ -259,21 +262,37 @@ class Fiber:
             while True:
                 if self.state is FiberState.LOADING:
                     epoch = self._epoch
+                    revision = self._revision
                     self._store = dict(self._bindings)
+                    for binding in self._store.values():
+                        if binding.fiber is not self:
+                            binding.dependents.add(self)
                     await asyncio.sleep(0)
-                    if epoch is not None and self.uid is not None and self._epoch == epoch:
+                    if (
+                        epoch is not None
+                        and self.uid is not None
+                        and self._epoch == epoch
+                        and self._revision == revision
+                    ):
                         try:
                             resolved = _validate_config(self._validate, self.raw_config)
                             # A synchronous validator may invalidate its own lifecycle.
-                            if self.uid is not None and self._epoch == epoch:
+                            if (
+                                self.uid is not None
+                                and self._epoch == epoch
+                                and self._revision == revision
+                            ):
                                 self._config = resolved
                                 if self._setup is not None:
-                                    effect = self._setup_effect(epoch)
+                                    effect = self._setup_effect(epoch, revision)
                                     await effect
                             self._error = None
                         except (Exception, asyncio.CancelledError) as error:
-                            self._error = error
-                            self._epoch = None
+                            if self.uid is None or (
+                                self._epoch == epoch and self._revision == revision
+                            ):
+                                self._error = error
+                                self._epoch = None
                             logging.getLogger("deepseek_cordis").error(
                                 "Fiber %s setup failed", self.name, exc_info=error
                             )
@@ -281,6 +300,7 @@ class Fiber:
                         epoch is not None
                         and self.uid is not None
                         and self._epoch == epoch
+                        and self._revision == revision
                         and self._error is None
                     ):
                         self._change_state(FiberState.ACTIVE)
@@ -305,6 +325,9 @@ class Fiber:
             _current_context.reset(scope_token)
 
     async def _unload(self) -> None:
+        # Keep provider resources alive until committed consumers finish cleanup.
+        for binding in tuple(self._owned_bindings.values()):
+            await self.ctx._services.wait_dependents(binding)
         cleanups = self._cleanups[::-1]
         self._cleanups.clear()
         results = await asyncio.gather(
@@ -317,6 +340,9 @@ class Fiber:
                     "Fiber %s cleanup failed", self.name, exc_info=result
                 )
 
+        for binding in (self._store or {}).values():
+            binding.dependents.discard(self)
+            binding.released.set()
         self._store = {} if self._root else None
 
     async def _run_cleanup(self, cleanup: Cleanup) -> None:
@@ -378,6 +404,7 @@ class Fiber:
         """Request an unload/reload and return this awaitable Fiber."""
         if self.uid is None:
             raise CordisError("INACTIVE_EFFECT")
+        self._revision += 1
         self._request_epoch(None)
         if self.runtime is not None:
             self.ctx._services.refresh(self)

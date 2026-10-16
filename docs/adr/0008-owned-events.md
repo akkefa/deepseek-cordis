@@ -1,6 +1,7 @@
 # ADR 0008: Owned listeners and explicit dispatch policies
 
-Status: accepted for Phase 7.
+Status: accepted for Phase 7. The parallel telemetry decision below is superseded
+by [ADR 0020](0020-upstream-fixes.md).
 
 ## Context
 

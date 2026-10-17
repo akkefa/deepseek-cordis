@@ -15,6 +15,8 @@ from .effects import Effect, EffectMeta, _active_effects
 from .errors import CordisError
 from .scope import _current_context
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from .context import Context
     from .metadata import PluginMeta
@@ -293,9 +295,7 @@ class Fiber:
                             ):
                                 self._error = error
                                 self._epoch = None
-                            logging.getLogger("deepseek_cordis").error(
-                                "Fiber %s setup failed", self.name, exc_info=error
-                            )
+                            logger.error("Fiber %s setup failed", self.name, exc_info=error)
                     if (
                         epoch is not None
                         and self.uid is not None
@@ -336,9 +336,7 @@ class Fiber:
         for result in results:
             if isinstance(result, BaseException):
                 self._cleanup_errors.append(result)
-                logging.getLogger("deepseek_cordis").error(
-                    "Fiber %s cleanup failed", self.name, exc_info=result
-                )
+                logger.error("Fiber %s cleanup failed", self.name, exc_info=result)
 
         for binding in (self._store or {}).values():
             binding.dependents.discard(self)

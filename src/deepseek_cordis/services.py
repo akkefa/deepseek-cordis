@@ -14,6 +14,8 @@ from .errors import CordisError
 from .fiber import FiberState, _executing
 from .scope import ScopeLabel, _config
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from .context import Context
     from .effects import Effect
@@ -169,9 +171,7 @@ class ServiceRegistry:
                     if not result:
                         continue
             except Exception:
-                logging.getLogger("deepseek_cordis").exception(
-                    "Service %s availability check failed", name
-                )
+                logger.exception("Service %s availability check failed", name)
                 continue
             if self._bindings.get(key) is binding and self._available(binding):
                 candidates[name] = binding

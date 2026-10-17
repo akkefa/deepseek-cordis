@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 from .errors import CordisError
 from .scope import _current_context
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from .context import Context
     from .fiber import Cleanup, Fiber
@@ -193,9 +195,7 @@ class Effect:
         if not task.cancelled():
             error = task.exception()
             if error is not None:
-                logging.getLogger("deepseek_cordis").error(
-                    "Effect %s async work failed", self.label, exc_info=error
-                )
+                logger.error("Effect %s async work failed", self.label, exc_info=error)
 
     def _detach(self) -> None:
         try:
@@ -209,9 +209,7 @@ class Effect:
 
     def _record_cleanup_error(self, error: BaseException) -> None:
         self._cleanup_error = error
-        logging.getLogger("deepseek_cordis").error(
-            "Effect %s cleanup failed", self.label, exc_info=error
-        )
+        logger.error("Effect %s cleanup failed", self.label, exc_info=error)
 
     @staticmethod
     def _combine(errors: list[BaseException]) -> BaseException:

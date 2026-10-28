@@ -14,7 +14,11 @@ not silently substituted contracts.
 The [2026-10-16 upstream audit](upstream-audit-2026-10-16.md) records selective
 provider-cleanup, restart-revision and event-diagnostic fixes, their supplemental
 source-indexed tests, and compatibility risks. The primary target and original
-72-case catalog stay pinned. The current full suite contains 398 tests.
+72-case catalog stay pinned. The
+[2026-10-28 upstream audit](upstream-audit-2026-10-28.md) found no further runtime
+port needed, added two async-generator effect regressions, and defers the Harness
+config-access API (`rawConfig` assignment, `resolveConfig(candidate)`). The current
+full suite contains 406 tests.
 
 ## Current behavior matrix
 

@@ -257,6 +257,49 @@ async def test_async_generator_stops_after_inflight_yield_and_closes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_async_generator_finally_runs_before_cleanup_when_disposed_midway() -> None:
+    # Cordis bd427d0, dispose.spec.ts "async yield (aborted, finally)".
+    seq: list[int] = []
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def setup() -> AsyncIterator[object]:
+        try:
+            yield lambda: seq.append(1)
+            started.set()
+            await release.wait()
+            yield lambda: seq.append(2)
+            await asyncio.Event().wait()
+            yield lambda: seq.append(3)
+        finally:
+            seq.append(0)
+
+    effect = Context().effect(setup)
+    await started.wait()
+    disposal = effect()
+    release.set()
+    await join(disposal)
+    assert seq == [0, 2, 1]
+
+
+@pytest.mark.asyncio
+async def test_async_generator_closed_on_invalid_yield() -> None:
+    # Cordis bd427d0, dispose.spec.ts "async yield invalid effect".
+    seq: list[int] = []
+
+    async def setup() -> AsyncIterator[object]:
+        try:
+            yield lambda: seq.append(1)
+            yield 1
+        finally:
+            seq.append(0)
+
+    effect = Context().effect(setup)
+    with pytest.raises(TypeError):
+        await effect
+    assert seq == [0, 1]
+
+
+@pytest.mark.asyncio
 async def test_async_setup_failure_rolls_back_before_wait_rethrows() -> None:
     calls: list[str] = []
 

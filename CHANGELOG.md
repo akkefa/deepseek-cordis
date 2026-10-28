@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.2
+
+- The package logger now has a `NullHandler`, and modules log through their own
+  child loggers, so unconfigured applications stay quiet.
+
+- Audited Cordis `bd427d0` and Harness `f3803c9`. No runtime port was needed.
+  Added regressions for the upstream async-generator effect close fix. Recorded
+  the Harness config-access API as deferred.
+
 ## 0.1.1 
 
 - Providers now wait for committed dependent cleanup before closing resources,

@@ -227,11 +227,12 @@
       "source_file": "packages/extensions/tool-cordis/tests/cordis-lifecycle.spec.ts",
       "source_line": 117,
       "source_title": "keeps effect registration legal while child fibers are PENDING and LOADING",
-      "classification": "future work",
-      "coverage": "partial",
-      "notes": "State legality is tested, but source assertion uses internal/plugin publication hooks, which remain missing.",
+      "classification": "Python-specific adaptation",
+      "coverage": "ported",
+      "notes": "Synchronous internal/plugin publication exposes PENDING state; effects registered there and during LOADING remain owned and drain on disposal.",
       "python_tests": [
-        "tests/test_effects.py::test_effects_are_legal_pending_and_loading_and_drain_after_failure"
+        "tests/test_effects.py::test_effects_are_legal_pending_and_loading_and_drain_after_failure",
+        "tests/test_fiber.py::test_internal_plugin_pending_and_loading_effects_are_owned"
       ]
     },
     {
@@ -241,10 +242,12 @@
       "source_file": "packages/extensions/tool-cordis/tests/cordis-lifecycle.spec.ts",
       "source_line": 141,
       "source_title": "resolves dependencies that internal/plugin adds before child activation",
-      "classification": "future work",
-      "coverage": "none",
-      "notes": "Observer-added mutable inject and internal/plugin publication are not implemented.",
-      "python_tests": []
+      "classification": "Python-specific adaptation",
+      "coverage": "ported",
+      "notes": "Fiber.inject is a mutable ordered mapping; publication observers may add dependencies before the first service refresh.",
+      "python_tests": [
+        "tests/test_fiber.py::test_internal_plugin_can_add_dependency_before_activation"
+      ]
     },
     {
       "id": "harness/cordis-lifecycle/rolls-back-parent-and-runtime-ownership-when-internal-plugin-publication-throws",
@@ -253,10 +256,12 @@
       "source_file": "packages/extensions/tool-cordis/tests/cordis-lifecycle.spec.ts",
       "source_line": 164,
       "source_title": "rolls back parent and runtime ownership when internal/plugin publication throws",
-      "classification": "future work",
-      "coverage": "none",
-      "notes": "No internal/plugin publication seam exists to inject this failure.",
-      "python_tests": []
+      "classification": "Python-specific adaptation",
+      "coverage": "ported",
+      "notes": "Synchronous publication failures request terminal disposal and remove parent/runtime ownership before the child can activate.",
+      "python_tests": [
+        "tests/test_fiber.py::test_internal_plugin_publication_failure_rolls_back_mount"
+      ]
     },
     {
       "id": "harness/cordis-lifecycle/contains-teardown-notification-failures-so-ownership-cleanup-and-peers-complete",
@@ -265,10 +270,12 @@
       "source_file": "packages/extensions/tool-cordis/tests/cordis-lifecycle.spec.ts",
       "source_line": 175,
       "source_title": "contains teardown notification failures so ownership cleanup and peers complete",
-      "classification": "future work",
-      "coverage": "none",
-      "notes": "General cleanup errors are contained, but teardown publication hooks are not implemented.",
-      "python_tests": []
+      "classification": "Python-specific adaptation",
+      "coverage": "ported",
+      "notes": "Disposal snapshots internal/plugin listeners, contains and logs each observer failure, and continues peer delivery and ownership cleanup.",
+      "python_tests": [
+        "tests/test_fiber.py::test_disposal_contains_internal_plugin_observer_failures"
+      ]
     },
     {
       "id": "harness/cordis-lifecycle/makes-a-loading-parent-join-child-cleanup-started-before-its-unload-snapshot",
@@ -277,11 +284,12 @@
       "source_file": "packages/extensions/tool-cordis/tests/cordis-lifecycle.spec.ts",
       "source_line": 197,
       "source_title": "makes a LOADING parent join child cleanup started before its unload snapshot",
-      "classification": "future work",
-      "coverage": "partial",
-      "notes": "Earlier child cleanup joins are tested; internal/plugin publication and LOADING observer race remain unported.",
+      "classification": "Python-specific adaptation",
+      "coverage": "ported",
+      "notes": "A LOADING parent and explicitly disposed child both join cleanup registered during child publication.",
       "python_tests": [
-        "tests/test_fiber.py::test_parent_disposal_joins_child_disposal_started_earlier"
+        "tests/test_fiber.py::test_parent_disposal_joins_child_disposal_started_earlier",
+        "tests/compatibility/test_harness.py::test_loading_parent_joins_child_cleanup_started_during_publication"
       ]
     },
     {
@@ -291,11 +299,12 @@
       "source_file": "packages/extensions/tool-cordis/tests/cordis-lifecycle.spec.ts",
       "source_line": 237,
       "source_title": "lets parent disposal during internal/plugin await the unpublished child to quiescence",
-      "classification": "future work",
-      "coverage": "partial",
-      "notes": "Pending-child structural drain and skipped setup are covered without publication; unpublished observer race remains future.",
+      "classification": "Python-specific adaptation",
+      "coverage": "ported",
+      "notes": "Parent disposal requested by a child publication observer drains the child's PENDING effects, skips setup and reaches terminal disposal.",
       "python_tests": [
-        "tests/compatibility/test_harness.py::test_parent_disposal_joins_pending_child_cleanup_without_running_setup"
+        "tests/compatibility/test_harness.py::test_parent_disposal_joins_pending_child_cleanup_without_running_setup",
+        "tests/compatibility/test_harness.py::test_parent_disposal_during_publication_drains_pending_child"
       ]
     },
     {

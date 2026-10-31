@@ -41,9 +41,12 @@ plugin setup or class construction. A PENDING mount does not validate. Validator
 run under the mount's current_context(), so explicitly declared requirements can
 be read there. Disposing a mount before activation skips validation entirely.
 
-Every activation, including restart and service restoration, validates the original
-raw input again. Fiber.raw_config retains that input by identity. Fiber.config is
-raw until validation first succeeds, then retains the last successful resolution.
+Every activation, including restart and service restoration, validates the retained
+raw input again. `Fiber.raw_config` preserves that input by identity and may be
+assigned without triggering a reload, including after disposal. `Fiber.config` is raw until validation first
+succeeds, then retains the last successful resolution. `Fiber.effective_config` is
+`None` before first publication and then identifies the configuration passed to the
+latest successful activation.
 If a later validation fails, the last successful config remains inspectable.
 Constructors, setup and Service.config receive the resolved value by identity.
 Without a validator, raw input passes unchanged. Input is not copied or frozen;
@@ -66,7 +69,9 @@ Validation must be synchronous. Awaitable results fail with TypeError. Newly ret
 native coroutines are closed to avoid unawaited-coroutine leaks; external Futures
 and Tasks are not cancelled or adopted. Validators should not launch background work.
 A validator that invalidates its Fiber cannot publish resolved config or run setup
-for the stale epoch.
+for the stale epoch. `Fiber.resolve_config(candidate)` runs the candidate through
+the `internal/config` waterfall and validator without changing raw, effective or
+running configuration.
 
 ## Boundaries
 
@@ -75,8 +80,8 @@ Defaults and transformations belong to validator implementations. Optional Pydan
 dataclass and other schema adapters remain separate future work. There is no automatic
 Standard Schema envelope, JavaScript symbol brand or library-specific conversion.
 
-The internal/config expression waterfall, internal/update persistence hooks and
-Fiber.update API remain future work with the loader. Operation intercept config
+Loader expression evaluation, internal/update persistence hooks and the Fiber.update
+API remain future work with the loader. Operation intercept config
 still uses explicit Service.resolve_config/merge_config; plugin validators do not
 automatically validate or merge those layers. No discovery, hot reload or configuration
 file reader is introduced in this phase.

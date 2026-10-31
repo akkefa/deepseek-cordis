@@ -12,12 +12,10 @@ runtime used by DeepSeek Harness at commit
 not the Harness application or its LLM integrations. Python APIs adapt the source
 where object proxies, Symbols or JavaScript execution semantics do not transfer.
 
-**Status: version `0.1.0` prepared as an alpha API; compatibility remains partial.**
+**Status: version `0.2.0` is an alpha API; compatibility remains partial.**
 The PyPI distribution name is `deepseek-cordis`; Python imports use
 `deepseek_cordis`. This is an independent project, not an official DeepSeek package.
-No release has been published in this project work. Phase 15 adds contribution
-guidance and a Python 3.11–3.13 CI
-workflow. Publication requires a separate explicit user request. See the
+Publication requires a separate explicit user request. See the
 [current compatibility matrix](docs/compatibility.md) and
 [GitHub readiness checklist](docs/github-readiness.md).
 

@@ -165,8 +165,8 @@ async def test_shared_apply_identity_retains_per_mount_requirements() -> None:
     assert first.runtime is second.runtime
     assert first.plugin_meta is not None and first.plugin_meta.name == "first"
     assert second.plugin_meta is not None and second.plugin_meta.name == "second"
-    assert first.inject == ("database",)
-    assert second.inject == ("logger",)
+    assert first.inject == {"database": None}
+    assert second.inject == {"logger": None}
     root.provide("database", object())
     await first
     assert first.state is FiberState.ACTIVE
@@ -190,8 +190,8 @@ async def test_runtime_and_mount_snapshots_survive_later_declaration_changes() -
     Plugin.inject.append("logger")
     second = await root.plugin(plugin)
     assert list(initial.inject) == ["database"]
-    assert first.inject == ("database",)
-    assert second.inject == ("database", "logger")
+    assert first.inject == {"database": None}
+    assert second.inject == {"database": None, "logger": None}
     await first.dispose()
     assert first.plugin_meta is not None and list(first.plugin_meta.inject) == ["database"]
     assert first.runtime.metadata is initial
@@ -209,7 +209,7 @@ async def test_complete_explicit_declaration_replaces_legacy_attributes() -> Non
 
     root = Context()
     fiber = await root.plugin(PluginSpec(Plugin(), PluginMeta(name="explicit")))
-    assert fiber.inject == ()
+    assert fiber.inject == {}
     assert fiber.plugin_meta is not None and fiber.plugin_meta.provide == ()
     assert root.get("legacy") is None
     await root.fiber.dispose()

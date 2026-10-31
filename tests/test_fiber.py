@@ -88,6 +88,166 @@ async def test_async_setup_and_cleanup_are_awaited() -> None:
 
 
 @pytest.mark.asyncio
+async def test_assert_active_and_official_lifecycle_publications() -> None:
+    root = Context()
+    plugin_events: list[tuple[int | None, FiberState]] = []
+    status_events: list[tuple[FiberState, FiberState]] = []
+    root.on(
+        "internal/plugin",
+        lambda fiber: plugin_events.append((fiber.uid, fiber.state)),
+    )
+    root.on(
+        "internal/status",
+        lambda fiber, old: status_events.append((old, fiber.state)),
+    )
+
+    fiber = root.plugin(lambda ctx, config: None)
+    fiber.assert_active()
+    assert plugin_events == [(fiber.uid, FiberState.PENDING)]
+    await fiber
+    assert status_events == [
+        (FiberState.PENDING, FiberState.LOADING),
+        (FiberState.LOADING, FiberState.ACTIVE),
+    ]
+
+    await fiber.dispose()
+    assert plugin_events[-1] == (None, FiberState.ACTIVE)
+    assert status_events[-2:] == [
+        (FiberState.ACTIVE, FiberState.UNLOADING),
+        (FiberState.UNLOADING, FiberState.DISPOSED),
+    ]
+    with pytest.raises(CordisError, match="INACTIVE_EFFECT"):
+        fiber.assert_active()
+    await root.fiber.dispose()
+
+
+@pytest.mark.asyncio
+async def test_internal_plugin_pending_and_loading_effects_are_owned() -> None:
+    root = Context()
+    cleaned: list[str] = []
+
+    def observe(fiber: Fiber) -> None:
+        if fiber.name == "state_probe" and fiber.uid is not None:
+            assert fiber.state is FiberState.PENDING
+            fiber.ctx.effect(
+                lambda: lambda: cleaned.append("pending"),
+                "pending-effect",
+            )
+
+    def state_probe(ctx: Context, config: object) -> None:
+        assert ctx.fiber.state is FiberState.LOADING
+        ctx.effect(lambda: lambda: cleaned.append("loading"), "loading-effect")
+
+    root.on("internal/plugin", observe)
+    fiber = await root.plugin(state_probe)
+    await fiber.dispose()
+    assert sorted(cleaned) == ["loading", "pending"]
+    await root.fiber.dispose()
+
+
+@pytest.mark.asyncio
+async def test_disposal_contains_internal_plugin_observer_failures() -> None:
+    root = Context()
+    created = True
+    observed: list[str] = []
+
+    def observe(fiber: Fiber) -> None:
+        nonlocal created
+        if created:
+            created = False
+            return
+        raise RuntimeError("observer failed")
+
+    root.on("internal/plugin", observe)
+    root.on(
+        "internal/plugin",
+        lambda fiber: observed.append("disposed") if fiber.uid is None else None,
+    )
+    fiber = await root.plugin(lambda ctx, config: None)
+    await fiber.dispose()
+    assert fiber.state is FiberState.DISPOSED
+    assert observed == ["disposed"]
+    await root.fiber.dispose()
+
+
+@pytest.mark.asyncio
+async def test_internal_plugin_can_dispose_pending_mount_before_setup() -> None:
+    root = Context()
+    calls: list[str] = []
+
+    def dispose_new_mount(fiber: Fiber) -> None:
+        if fiber.uid is not None:
+            fiber.dispose()
+
+    root.on("internal/plugin", dispose_new_mount)
+    fiber = root.plugin(lambda ctx, config: calls.append("setup"))
+    await fiber
+    assert calls == []
+    assert fiber.state is FiberState.DISPOSED
+    assert root.registry.size == 0
+    await root.fiber.dispose()
+
+
+@pytest.mark.asyncio
+async def test_internal_plugin_can_add_dependency_before_activation() -> None:
+    root = Context()
+    service = object()
+    root.provide("late-inject", service)
+    calls: list[object] = []
+
+    def add_dependency(fiber: Fiber) -> None:
+        if fiber.name == "loader_shaped" and fiber.uid is not None:
+            fiber.inject["late-inject"] = None
+
+    def loader_shaped(ctx: Context, config: object) -> None:
+        calls.append(ctx.require("late-inject"))
+
+    root.on("internal/plugin", add_dependency)
+    fiber = await root.plugin(loader_shaped)
+    assert calls == [service]
+    assert fiber.state is FiberState.ACTIVE
+    await root.fiber.dispose()
+
+
+@pytest.mark.asyncio
+async def test_internal_plugin_added_dependency_applies_intercept_config() -> None:
+    root = Context()
+    root.provide("late-inject", object())
+    seen: list[object] = []
+
+    def add_dependency(fiber: Fiber) -> None:
+        if fiber.name == "intercepted" and fiber.uid is not None:
+            fiber.inject["late-inject"] = {"timeout": 3}
+
+    def intercepted(ctx: Context, config: object) -> None:
+        seen.append(ctx.resolve_config("late-inject"))
+
+    root.on("internal/plugin", add_dependency)
+    await root.plugin(intercepted)
+    assert seen == [{"timeout": 3}]
+    await root.fiber.dispose()
+
+
+@pytest.mark.asyncio
+async def test_internal_plugin_publication_failure_rolls_back_mount() -> None:
+    root = Context()
+    published: list[Fiber] = []
+
+    def reject(fiber: Fiber) -> None:
+        published.append(fiber)
+        raise RuntimeError("publication failed")
+
+    root.on("internal/plugin", reject)
+    with pytest.raises(RuntimeError, match="publication failed"):
+        root.plugin(lambda ctx, config: pytest.fail("setup must not run"))
+    assert len(published) >= 1
+    await published[0].wait()
+    assert published[0].state is FiberState.DISPOSED
+    assert root.registry.size == 0
+    await root.fiber.dispose()
+
+
+@pytest.mark.asyncio
 async def test_pending_is_settled_and_does_not_execute_setup() -> None:
     calls: list[str] = []
     fiber = Fiber(Context(), lambda ctx, config: calls.append("setup"))

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Generator
+from collections.abc import Awaitable, Generator
 
 import pytest
 
-from deepseek_cordis import Context, FiberState
+from deepseek_cordis import Context, Fiber, FiberState
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.compatibility]
 
@@ -99,3 +99,100 @@ async def test_parent_disposal_joins_pending_child_cleanup_without_running_setup
     assert finished == [True]
     assert child.state is owner.state is FiberState.DISPOSED
     assert root.registry.size == 0
+
+
+async def test_loading_parent_joins_child_cleanup_started_during_publication() -> None:
+    root = Context()
+    cleanup_started = asyncio.Event()
+    cleanup_release = asyncio.Event()
+    owner_disposal: Awaitable[None] | None = None
+    child_disposal: Awaitable[None] | None = None
+    owner_fiber: Fiber | None = None
+    child_fiber: Fiber | None = None
+
+    def observe(fiber: Fiber) -> None:
+        nonlocal owner_disposal, child_disposal, child_fiber
+        if fiber.name != "loading_child" or fiber.uid is None:
+            return
+        child_fiber = fiber
+
+        async def cleanup() -> None:
+            cleanup_started.set()
+            await cleanup_release.wait()
+
+        fiber.ctx.effect(lambda: cleanup, "loading-child-cleanup")
+        assert owner_fiber is not None
+        owner_disposal = owner_fiber.dispose()
+        child_disposal = fiber.dispose()
+
+    def loading_child(ctx: Context, config: object) -> None:
+        pass
+
+    def loading_owner(ctx: Context, config: object) -> None:
+        nonlocal owner_fiber
+        owner_fiber = ctx.fiber
+        ctx.plugin(loading_child)
+
+    root.on("internal/plugin", observe)
+    owner_mount = root.plugin(loading_owner)
+    await cleanup_started.wait()
+    assert owner_disposal is not None and child_disposal is not None
+    assert owner_fiber is not None
+    waiting = asyncio.create_task(owner_fiber.wait())
+    await asyncio.sleep(0)
+    assert not waiting.done()
+    cleanup_release.set()
+    await asyncio.gather(owner_disposal, child_disposal, owner_mount, waiting)
+    assert child_fiber is not None and child_fiber.uid is None
+    assert owner_fiber.uid is None
+
+
+async def test_parent_disposal_during_publication_drains_pending_child() -> None:
+    root = Context()
+    owner_ctx: Context | None = None
+
+    def owner_plugin(ctx: Context, config: object) -> None:
+        nonlocal owner_ctx
+        owner_ctx = ctx
+
+    owner = await root.plugin(owner_plugin)
+    cleanup_started = asyncio.Event()
+    cleanup_release = asyncio.Event()
+    cleanup_finished: list[bool] = []
+    child_calls: list[bool] = []
+    parent_disposal: Awaitable[None] | None = None
+
+    def register_pending_cleanup(fiber: Fiber) -> None:
+        if fiber.name != "child_plugin" or fiber.uid is None:
+            return
+
+        async def cleanup() -> None:
+            cleanup_started.set()
+            await cleanup_release.wait()
+            cleanup_finished.append(True)
+
+        fiber.ctx.effect(lambda: cleanup, "pending-child-cleanup")
+
+    def dispose_parent(fiber: Fiber) -> None:
+        nonlocal parent_disposal
+        if fiber.name == "child_plugin" and fiber.uid is not None:
+            parent_disposal = owner.dispose()
+
+    def child_plugin(ctx: Context, config: object) -> None:
+        child_calls.append(True)
+
+    root.on("internal/plugin", register_pending_cleanup)
+    root.on("internal/plugin", dispose_parent)
+    assert owner_ctx is not None
+    child = owner_ctx.plugin(child_plugin)
+    await cleanup_started.wait()
+    assert parent_disposal is not None
+    waiting = asyncio.create_task(owner.wait())
+    await asyncio.sleep(0)
+    assert not waiting.done()
+    cleanup_release.set()
+    await parent_disposal
+    await waiting
+    assert cleanup_finished == [True]
+    assert child_calls == []
+    assert child.state is owner.state is FiberState.DISPOSED

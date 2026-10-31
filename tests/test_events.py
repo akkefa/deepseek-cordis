@@ -337,13 +337,39 @@ def test_waterfall_veto_skips_remaining_chain_and_terminal() -> None:
     assert root.waterfall("event", 3, next_=lambda: pytest.fail("vetoed")) == 3
 
 
-def test_waterfall_repeated_next_preserves_pinned_source_queue_semantics() -> None:
+def test_waterfall_rejects_repeated_next_from_one_listener() -> None:
     root = Context()
     calls: list[str] = []
 
-    def callback(next_: Callable[[], object]) -> object:
+    def first(next_: Callable[[], object]) -> object:
+        calls.append("first")
         next_()
         return next_()
+
+    def second(next_: Callable[[], object]) -> object:
+        calls.append("second")
+        return next_()
+
+    root.on("event", first)
+    root.on("event", second)
+
+    def terminal() -> object:
+        calls.append("terminal")
+        return 2
+
+    with pytest.raises(RuntimeError, match="next\\(\\) called multiple times"):
+        root.waterfall("event", next_=terminal)
+    assert calls == ["first", "second", "terminal"]
+
+
+@pytest.mark.asyncio
+async def test_async_waterfall_rejects_repeated_next_from_one_listener() -> None:
+    root = Context()
+    calls: list[str] = []
+
+    async def callback(next_: Callable[[], Awaitable[object]]) -> object:
+        await next_()
+        return await next_()
 
     root.on("event", callback)
 
@@ -351,8 +377,10 @@ def test_waterfall_repeated_next_preserves_pinned_source_queue_semantics() -> No
         calls.append("terminal")
         return 2
 
-    assert root.waterfall("event", next_=terminal) == 2
-    assert calls == ["terminal", "terminal"]
+    with pytest.raises(RuntimeError, match="next\\(\\) called multiple times"):
+        await resolved(root.waterfall("event", next_=terminal))
+    assert calls == ["terminal"]
+    await root.fiber.dispose()
 
 
 @pytest.mark.asyncio
@@ -463,6 +491,27 @@ def test_dispatch_telemetry_does_not_recurse_and_observes_before_delivery() -> N
     assert calls == [("emit", "event", ("value",), None), "value"]
     root.emit("internal/example")
     assert len(calls) == 2
+
+
+def test_public_dispatch_returns_filtered_listener_snapshot_without_invoking_it() -> None:
+    root = Context()
+    left, right = root.extend({"scope": "left"}), root.extend({"scope": "right"})
+    calls: list[tuple[str, object]] = []
+    left.on("event", lambda value: calls.append(("left", value)))
+    right.on("event", lambda value: calls.append(("right", value)))
+    right.on("event", lambda value: calls.append(("global", value)), global_=True)
+
+    callbacks = root.events.dispatch(
+        "emit",
+        "event",
+        ("value",),
+        lambda ctx: ctx.metadata["scope"] == "left",
+    )
+
+    assert calls == []
+    for callback in callbacks:
+        callback("value")
+    assert calls == [("left", "value"), ("global", "value")]
 
 
 @pytest.mark.asyncio

@@ -5,12 +5,11 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
-from collections.abc import Awaitable, Callable, Generator
+from collections.abc import Awaitable, Callable, Generator, Mapping
 from contextvars import ContextVar
 from enum import IntEnum
 from typing import TYPE_CHECKING, TypeAlias
 
-from .config import _validate_config
 from .effects import Effect, EffectMeta, _active_effects
 from .errors import CordisError
 from .scope import _current_context
@@ -71,7 +70,8 @@ class Fiber:
         config: object = None,
         *,
         name: str | None = None,
-        _dependencies: tuple[str, ...] = (),
+        _dependencies: tuple[str, ...] | Mapping[str, Mapping[str, object] | None] = (),
+        _defer_activation: bool = False,
     ) -> None:
         # Validate before changing parent ownership or allocating a uid.
         loop = asyncio.get_running_loop()
@@ -88,8 +88,12 @@ class Fiber:
         self._ctx._fiber = self
         self._parent_cleanup: Cleanup | None = self.dispose
         parent.fiber.add_cleanup(self._parent_cleanup)
-        self._inject: tuple[str, ...] = _dependencies
-        if not _dependencies:
+        self._inject: dict[str, Mapping[str, object] | None] = (
+            dict(_dependencies)
+            if isinstance(_dependencies, Mapping)
+            else dict.fromkeys(_dependencies)
+        )
+        if not _dependencies and not _defer_activation:
             self._set_epoch((), loop=loop)
 
     @classmethod
@@ -106,9 +110,12 @@ class Fiber:
         self._setup = setup
         self._raw_config = config
         self._config = config
+        self._effective_config: object = None
+        self._config_revision = 0
         self._validate: Callable[[object], object] | None = None
         self._name = name
         self._root = root
+        self.entry: object | None = None
         self._uid = 0 if root else None
         self._counter = 0
         self._state = FiberState.ACTIVE if root else FiberState.PENDING
@@ -124,7 +131,7 @@ class Fiber:
         self._runtime: PluginRuntime | None = None
         self._plugin_meta: PluginMeta | None = None
         self._unregister: Callable[[], None] | None = None
-        self._inject = ()
+        self._inject = {}
         self._bindings: dict[str, _Binding] = {}
         self._owned_bindings: dict[tuple[str, ScopeLabel], _Binding] = {}
         self._store: dict[str, _Binding] | None = {}
@@ -148,8 +155,8 @@ class Fiber:
         return self._plugin_meta
 
     @property
-    def inject(self) -> tuple[str, ...]:
-        """Immutable ordered service requirements for this mount."""
+    def inject(self) -> dict[str, Mapping[str, object] | None]:
+        """Mutable ordered service requirements resolved before activation."""
         return self._inject
 
     @property
@@ -157,10 +164,21 @@ class Fiber:
         """Original input by identity; used again on each activation."""
         return self._raw_config
 
+    @raw_config.setter
+    def raw_config(self, config: object) -> None:
+        """Retain new raw input without reloading or replacing the running config."""
+        self._raw_config = config
+        self._config_revision += 1
+
     @property
     def config(self) -> object:
         """Last resolved config; raw input until first successful validation."""
         return self._config
+
+    @property
+    def effective_config(self) -> object:
+        """Configuration published by the latest successful activation."""
+        return self._effective_config
 
     @property
     def uid(self) -> int | None:
@@ -188,6 +206,11 @@ class Fiber:
         if self.uid is None or self.state is FiberState.UNLOADING:
             raise CordisError("INACTIVE_EFFECT")
 
+    def assert_active(self) -> None:
+        """Raise ``INACTIVE_EFFECT`` after this Fiber has been disposed."""
+        if self.uid is None:
+            raise CordisError("INACTIVE_EFFECT")
+
     def add_cleanup(self, cleanup: Cleanup) -> None:
         """Register a lifecycle cleanup; not the full Cordis effect API.
 
@@ -203,6 +226,24 @@ class Fiber:
     def effect(self, setup: Callable[[], object], label: str = "anonymous") -> Effect:
         """Register reversible setup before invoking its synchronous body."""
         return Effect(self, setup, label)
+
+    def resolve_config(self, config: object) -> object:
+        """Resolve a candidate through ``internal/config`` and the plugin validator.
+
+        Resolution is side-effect free with respect to ``raw_config`` and
+        ``effective_config``.  Configuration hooks and validators are synchronous,
+        matching the rest of the Python configuration protocol.
+        """
+        result = self.ctx.waterfall(
+            "internal/config",
+            self,
+            next_=lambda: config,
+        )
+        if inspect.isawaitable(result):
+            if inspect.iscoroutine(result):
+                result.close()
+            raise TypeError("Async config resolution is not supported")
+        return result
 
     def get_effects(self) -> tuple[EffectMeta, ...]:
         """Diagnostic snapshots of currently owner-visible effect trees."""
@@ -242,7 +283,10 @@ class Fiber:
     def _change_state(self, state: FiberState) -> None:
         old = self._state
         self._state = state
-        if old is not state and (old is FiberState.ACTIVE or state is FiberState.ACTIVE):
+        if old is state:
+            return
+        self.ctx.emit("internal/status", self, old)
+        if old is FiberState.ACTIVE or state is FiberState.ACTIVE:
             self.ctx._services.owner_changed(self)
 
     def _setup_effect(self, epoch: Epoch, revision: int) -> Effect:
@@ -277,7 +321,7 @@ class Fiber:
                         and self._revision == revision
                     ):
                         try:
-                            resolved = _validate_config(self._validate, self.raw_config)
+                            resolved = self.resolve_config(self.raw_config)
                             # A synchronous validator may invalidate its own lifecycle.
                             if (
                                 self.uid is not None
@@ -285,6 +329,7 @@ class Fiber:
                                 and self._revision == revision
                             ):
                                 self._config = resolved
+                                self._effective_config = resolved
                                 if self._setup is not None:
                                     effect = self._setup_effect(epoch, revision)
                                     await effect
@@ -348,6 +393,29 @@ class Fiber:
         if inspect.isawaitable(result):
             await result
 
+    def _emit_plugin_disposed(self) -> None:
+        """Publish terminal plugin disposal while containing observer failures."""
+        try:
+            callbacks = self.ctx.events.dispatch("emit", "internal/plugin", (self,))
+        except BaseException as error:
+            logger.error("Fiber %s disposal publication failed", self.name, exc_info=error)
+            return
+
+        async def contain(awaitable: Awaitable[object]) -> None:
+            try:
+                await awaitable
+            except BaseException:
+                logger.error("Fiber %s disposal observer failed", self.name, exc_info=True)
+
+        for callback in callbacks:
+            try:
+                with self.ctx.scope():
+                    result = callback(self)
+                if inspect.isawaitable(result):
+                    asyncio.get_running_loop().create_task(contain(result))
+            except BaseException:
+                logger.error("Fiber %s disposal observer failed", self.name, exc_info=True)
+
     def _detach(self) -> None:
         cleanup = self._parent_cleanup
         if cleanup is not None:
@@ -389,6 +457,8 @@ class Fiber:
         if self.uid is not None:
             loop = self._bind_loop()
             self._uid = None
+            if self.runtime is not None:
+                self._emit_plugin_disposed()
             if self._unregister is not None:
                 self._unregister()
                 self._unregister = None
@@ -400,8 +470,7 @@ class Fiber:
 
     def restart(self) -> Fiber:
         """Request an unload/reload and return this awaitable Fiber."""
-        if self.uid is None:
-            raise CordisError("INACTIVE_EFFECT")
+        self.assert_active()
         self._revision += 1
         self._request_epoch(None)
         if self.runtime is not None:

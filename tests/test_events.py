@@ -465,6 +465,27 @@ def test_dispatch_telemetry_does_not_recurse_and_observes_before_delivery() -> N
     assert len(calls) == 2
 
 
+def test_public_dispatch_returns_filtered_listener_snapshot_without_invoking_it() -> None:
+    root = Context()
+    left, right = root.extend({"scope": "left"}), root.extend({"scope": "right"})
+    calls: list[tuple[str, object]] = []
+    left.on("event", lambda value: calls.append(("left", value)))
+    right.on("event", lambda value: calls.append(("right", value)))
+    right.on("event", lambda value: calls.append(("global", value)), global_=True)
+
+    callbacks = root.events.dispatch(
+        "emit",
+        "event",
+        ("value",),
+        lambda ctx: ctx.metadata["scope"] == "left",
+    )
+
+    assert calls == []
+    for callback in callbacks:
+        callback("value")
+    assert calls == [("left", "value"), ("global", "value")]
+
+
 @pytest.mark.asyncio
 async def test_parallel_telemetry_reports_parallel_mode() -> None:
     root = Context()

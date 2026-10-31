@@ -18,14 +18,14 @@ source-indexed tests, and compatibility risks. The primary target and original
 [2026-10-28 upstream audit](upstream-audit-2026-10-28.md) found no further runtime
 port needed, added two async-generator effect regressions, and defers the Harness
 config-access API (`rawConfig` assignment, `resolveConfig(candidate)`). The current
-full suite contains 406 tests.
+full suite contains 417 tests.
 
 ## Current behavior matrix
 
 | Cordis feature | deepseek-cordis | Evidence / boundary |
 |---|---|---|
 | Context | Python adaptation | Root/parent/owner, immutable metadata views and subclass identity; no attribute/service proxies |
-| Fiber lifecycle | Implemented scoped core | Serialized setup/unload/restart, owned child drain, retained failures and shielded waits; publication hooks future |
+| Fiber lifecycle | Implemented scoped core | Serialized setup/unload/restart, owned child drain, retained failures, shielded waits, active assertions and internal plugin/status publication |
 | Effects | Implemented with deviations | Callable/awaitable handles, sync/async generators, joined rollback; nested cleanup drains all after errors |
 | Registry/plugin forms | Python adaptation | Functions, objects/apply, classes/start; original callbacks share runtimes, mounts own distinct Fibers |
 | provide/get/set/require | Explicit Python APIs | Owned scoped slots and loaded snapshots; property traps, mixins and associated types future |
@@ -36,8 +36,8 @@ full suite contains 406 tests.
 | isolate | Explicit Python labels | Scoped slots and shared ScopeLabel; explicit event filtering replaces source thisArg routing |
 | intercept | Explicit configuration layers | Caller ContextVar, config merging and Service.matches_scope; automatic get/set/method interception future |
 | Metadata/decorators | Explicit records | PluginMeta/PluginSpec/plugin-wide decorator; source method @Inject is not implemented |
-| Configuration | Synchronous Python protocol | Defaults/transforms, raw/resolved config, reload validation and structured errors; Fiber.update/internal/config future |
-| Loader | Explicit deterministic subset | Ordered references/rows, real Fibers, batch rollback/disposal; includes, expression trees, discovery, nested config groups and HMR future |
+| Configuration | Synchronous Python protocol | Defaults/transforms, mutable raw and published effective config, non-publishing candidate resolution through internal/config, reload validation and structured errors; Fiber.update remains future |
+| Loader | Explicit deterministic subset | Ordered references/rows, real Fibers with entry association before publication, batch rollback/disposal; includes, expression trees, discovery, nested config groups and HMR future |
 | Logger/association/tracing | Future | Python failure logs do not implement Cordis LoggerService, exporter, tracker or proxy contracts |
 
 ## Source-indexed evidence
@@ -55,16 +55,16 @@ inventory; they are not assumed covered.
 | Classification | Source cases | Meaning |
 |---|---:|---|
 | identical semantic behavior | 5 | The listed case's observed assertions are retained; API spelling/representation may differ |
-| Python-specific adaptation | 43 | An explicit Python equivalent or deviation is recorded; some cases have only partial evidence |
+| Python-specific adaptation | 49 | An explicit Python equivalent or deviation is recorded; some cases have only partial evidence |
 | not applicable in Python | 2 | JS/Node-specific representation contracts, with a reason |
-| future work | 22 | Full source behavior still needs unimplemented APIs or a port; partial related evidence may exist |
+| future work | 16 | Full source behavior still needs unimplemented APIs or a port; partial related evidence may exist |
 
-Coverage is tracked separately: 40 records have ports, 15 have partial evidence,
-and 17 have no executable port. These are source-case bookkeeping counts, not a
+Coverage is tracked separately: 46 records have ports, 12 have partial evidence,
+and 14 have no executable port. These are source-case bookkeeping counts, not a
 compatibility percentage or counts of Python test invocations. A partial record
 must not be described as a complete source test passing. In particular, property
-association, retained-method tracing, logger naming, method decorators and
-publication observers remain gaps despite related core tests passing.
+association, retained-method tracing, logger naming and method decorators remain gaps
+despite related core tests passing.
 
 ## Running and maintaining the suite
 
@@ -76,9 +76,9 @@ uv run ruff format --check .
 uv run mypy src tests examples
 ```
 
-Phase 12 adds 23 behavioral cases in tests/compatibility/test_upstream.py and
-test_harness.py, plus one catalog integrity check. The focused selection has 24
-cases; the full suite has 379. Source ports include nested plugin listener
+The compatibility suites contain 25 behavioral cases in
+tests/compatibility/test_upstream.py and test_harness.py, plus one catalog integrity
+check. The focused selection has 26 cases; the full suite has 417. Source ports include nested plugin listener
 ownership, effect listener trees, ordinary error rollback, Service initialization
 through an event, inactive snapshots, scoped activation, fixed-argument waterfall,
 retained failures/logging, and reentrant parent/effect cleanup barriers.
@@ -107,9 +107,7 @@ retain earlier evidence and counts; this page and the catalog are the current vi
 - Batch failure rolls back owned mounts, while normal Python imports remain cached
   and module-level side effects cannot be undone.
 
-Internal/plugin, internal/status, internal/service, internal/listener,
-internal/config and internal/update producers/interceptors remain future work.
-A passing structural parent cleanup port does not substantiate a publication-hook
-race. Missing async-generator timer scenarios remain explicitly partial. General
+Internal/service, internal/listener and internal/update producers/interceptors remain
+future work. Missing async-generator timer scenarios remain explicitly partial. General
 background-task ownership, update/persistence, HMR, schema adapters and transparent
 proxy/tracker behavior also remain future work.

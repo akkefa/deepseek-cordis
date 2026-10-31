@@ -38,7 +38,12 @@ asyncio.run(main())
 | fiber.uid | Root 0; child uid per root; None once child disposal requested |
 | fiber.state | Read-only six-state enum with Harness numeric values |
 | fiber.config | Latest resolved config; raw input until first successful validation |
-| fiber.raw_config | Original caller input by identity, revalidated each activation |
+| fiber.raw_config | Retained caller input by identity; assignment affects the next activation without reloading |
+| fiber.effective_config | Resolved object published by the latest successful activation |
+| fiber.resolve_config(candidate) | Resolve and validate without publishing or replacing retained input |
+| fiber.assert_active() | Raise `INACTIVE_EFFECT` after terminal disposal |
+| fiber.inject | Mutable ordered dependency map; publication observers may extend it before activation |
+| fiber.entry | Loader entry associated before publication, inherited by nested plugins |
 | fiber.error | Retained setup failure; cleared after successful activation |
 | fiber.cleanup_errors | Immutable snapshot of contained cleanup failures over lifetime |
 | await fiber / fiber.wait() | Settle current transitions; return Fiber or raise setup failure |
@@ -50,7 +55,10 @@ Setup may be sync/async and return None, cleanup callbacks, generators or
 composed effect results. It is registered as a labeled effect and uses the shared
 effect runner. Registry mounts normalize plugin forms and activate from required
 service bindings. Direct Fiber construction has no plugin declaration/validator.
-Internal/plugin/status publication notifications remain unimplemented.
+Registry mounts publish `internal/plugin` while still PENDING, before their first
+service refresh, and publish it again after clearing uid during disposal. State
+changes publish `internal/status(fiber, old_state)`. Disposal contains publication
+observer failures so peer notification and ownership cleanup continue.
 
 ## Transitions
 

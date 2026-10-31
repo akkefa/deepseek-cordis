@@ -162,7 +162,12 @@ class Loader:
         try:
             # Complete synchronous mounting before any plugin begins setup.
             for entry, plugin in resolved:
-                mounted[entry.id] = owner.ctx.plugin(plugin, entry.config)
+                mounted[entry.id] = owner.ctx.registry.mount(
+                    owner.ctx,
+                    plugin,
+                    entry.config,
+                    entry=entry,
+                )
             await owner
             await _settle(tuple(mounted.values()))
             if owner.uid is None:

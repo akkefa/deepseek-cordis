@@ -71,7 +71,14 @@ class Events:
 
     def __init__(self, ctx: Context) -> None:
         self._ctx = ctx
-        self._hooks: dict[str, list[_Hook]] = {}
+        from .config import _validate_config
+
+        def resolve_config(fiber: Any, next_: Callable[[], object]) -> object:
+            return _validate_config(fiber._validate, next_())
+
+        self._hooks: dict[str, list[_Hook]] = {
+            "internal/config": [_Hook(ctx, resolve_config, False)]
+        }
 
     def _view(self, ctx: Context) -> Events:
         view = Events(ctx)
@@ -120,6 +127,22 @@ class Events:
 
         effect = self.on(name, call, prepend=prepend, global_=global_)
         return effect
+
+    def dispatch(
+        self,
+        mode: str,
+        name: str,
+        args: tuple[object, ...] = (),
+        filter_: EventFilter | None = None,
+    ) -> tuple[Listener, ...]:
+        """Return the matching listener snapshot without invoking it.
+
+        This is the public equivalent of official Cordis ``Events.dispatch``.
+        Callers that need per-listener error containment may invoke each returned
+        callback themselves.  The snapshot preserves registration order and the
+        same global/filter rules used by the built-in dispatch modes.
+        """
+        return self._dispatch(mode, name, args, filter_)
 
     def _dispatch(
         self, mode: str, name: str, args: tuple[object, ...], filter_: EventFilter | None

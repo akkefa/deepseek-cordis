@@ -96,7 +96,51 @@ async def test_defaults_transform_before_class_constructor_and_start() -> None:
     fiber = await root.plugin(Server, raw)
     assert calls == ["validate", "construct", "start"]
     assert fiber.raw_config is raw
+    assert fiber.effective_config is normalized
     assert raw == {"port": "123"}
+    await root.fiber.dispose()
+
+
+@pytest.mark.asyncio
+async def test_resolve_config_is_nonpublishing_and_raw_assignment_reloads_only_on_restart() -> None:
+    normalized: list[dict[str, object]] = []
+
+    class Schema:
+        def validate(self, value: object) -> object:
+            assert isinstance(value, dict)
+            result = {**value, "validated": True}
+            normalized.append(result)
+            return result
+
+    root = Context()
+    root.on(
+        "internal/config",
+        lambda fiber, next_: {**cast(dict[str, object], next_()), "hooked": fiber.name},
+    )
+    initial = {"value": 1}
+    fiber = await root.plugin(
+        PluginSpec(lambda ctx, config: None, PluginMeta(name="worker", config=Schema())),
+        initial,
+    )
+    first_effective = fiber.effective_config
+    assert first_effective == {"value": 1, "validated": True, "hooked": "worker"}
+
+    candidate = fiber.resolve_config({"value": 2})
+    assert candidate == {"value": 2, "validated": True, "hooked": "worker"}
+    assert fiber.raw_config is initial
+    assert fiber.effective_config is first_effective
+
+    replacement = {"value": 3}
+    fiber.raw_config = replacement
+    assert fiber.raw_config is replacement
+    assert fiber.effective_config is first_effective
+    await fiber.restart()
+    assert fiber.effective_config == {
+        "value": 3,
+        "validated": True,
+        "hooked": "worker",
+    }
+    assert len(normalized) == 3
     await root.fiber.dispose()
 
 

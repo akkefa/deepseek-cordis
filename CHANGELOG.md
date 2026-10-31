@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0 — Unreleased
+
+- Added public `Events.dispatch()` and `Fiber.assert_active()` equivalents of the
+  official Cordis APIs while retaining the existing private compatibility surface.
+- Added `internal/plugin` creation/disposal publication and `internal/status`
+  transitions with official PENDING-before-activation ordering, mutable dependency
+  injection, publication rollback, observer-failure containment and parent/child
+  cleanup joining.
+- Added non-publishing `Fiber.resolve_config()`, mutable `raw_config`,
+  `effective_config`, and `internal/config` interception.
+- Loader-created fibers now expose their originating `PluginEntry` as `fiber.entry`
+  before publication and activation.
+
 ## 0.1.2
 
 - The package logger now has a `NullHandler`, and modules log through their own

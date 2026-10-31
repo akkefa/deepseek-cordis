@@ -88,11 +88,17 @@ async def test_config_imports_module_metadata_and_keeps_actual_fibers(
     monkeypatch.setitem(sys.modules, module.__name__, module)
     root = Context()
     config = object()
-    batch = await Loader(root).load_config(
-        [{"id": "entry", "plugin": module.__name__, "config": config}]
+    published: list[object] = []
+    root.on(
+        "internal/plugin",
+        lambda fiber: published.append(fiber.entry) if fiber.uid is not None else None,
     )
+    entry = PluginEntry("entry", module.__name__, config)
+    batch = await Loader(root).load([entry])
     fiber = batch.fibers["entry"]
     assert fiber.raw_config is config
+    assert fiber.entry is entry
+    assert published[-1] is entry
     assert fiber.name == "display"
     assert seen == [config]
     assert root.registry.get(module) is fiber.runtime
@@ -118,6 +124,24 @@ async def test_mount_and_setup_order_follow_entries_without_sorting_ids() -> Non
     assert batch.fibers["z"].runtime is batch.fibers["a"].runtime
     await batch.dispose()
     assert order == [1, 2, ("cleanup", 2), ("cleanup", 1)]
+
+
+@pytest.mark.asyncio
+async def test_nested_plugins_inherit_their_loader_entry() -> None:
+    root = Context()
+    nested = []
+
+    def child(ctx: Context, config: object) -> None:
+        nested.append(ctx.fiber)
+
+    def parent(ctx: Context, config: object) -> None:
+        ctx.plugin(child)
+
+    entry = PluginEntry("parent", parent)
+    batch = await Loader(root).load([entry])
+    assert batch.fibers["parent"].entry is entry
+    assert len(nested) == 1 and nested[0].entry is entry
+    await batch.dispose()
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 
 from .config import _resolve_validator
-from .fiber import Fiber, Setup
+from .fiber import Fiber, FiberState, Setup
 from .metadata import PluginMeta, _inspect_meta, _resolve_callback
 
 if TYPE_CHECKING:
@@ -90,7 +90,14 @@ class Registry:
     def __iter__(self) -> Iterator[Setup]:
         return iter(self.keys())
 
-    def mount(self, parent: Context, plugin: object, config: object = None) -> Fiber:
+    def mount(
+        self,
+        parent: Context,
+        plugin: object,
+        config: object = None,
+        *,
+        entry: object | None = None,
+    ) -> Fiber:
         """Mount a fresh Fiber while reusing the callback's shared runtime."""
         callback = self.resolve(plugin)
         if callback is None:
@@ -116,17 +123,30 @@ class Registry:
                 self._setup(runtime.callback),
                 config,
                 name=runtime.name,
-                _dependencies=tuple(inject),
+                _dependencies=inject,
+                _defer_activation=True,
             )
-            intercepts = {name: config for name, config in inject.items() if config is not None}
-            if intercepts:
-                fiber.ctx._intercepts = (*fiber.ctx._intercepts, MappingProxyType(intercepts))
             runtime._fibers.append(fiber)
             fiber._runtime = runtime
             fiber._plugin_meta = meta
             fiber._validate = validator
+            fiber.entry = parent.fiber.entry if entry is None else entry
             fiber._unregister = lambda: self._remove(key, runtime, fiber)
-            parent._services.refresh(fiber)
+            try:
+                fiber.ctx.emit("internal/plugin", fiber)
+            except BaseException:
+                fiber.dispose()
+                raise
+            if fiber.uid is not None and parent.fiber.state is not FiberState.UNLOADING:
+                intercepts = {
+                    name: config for name, config in fiber.inject.items() if config is not None
+                }
+                if intercepts:
+                    fiber.ctx._intercepts = (
+                        *fiber.ctx._intercepts,
+                        MappingProxyType(intercepts),
+                    )
+                parent._services.refresh(fiber)
             return fiber
         except BaseException:
             if created and self._records.get(key) is runtime and not runtime._fibers:

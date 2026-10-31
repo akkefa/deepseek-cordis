@@ -23,6 +23,8 @@ Every dispatch snapshots selected callbacks before invoking them. Removing a
 listener during delivery does not remove it from that snapshot, and new listeners
 wait until the next dispatch. Once's additional fired guard is the exception.
 Ordinary child dispatch reaches sibling/root listeners without implicit filtering.
+`ctx.events.dispatch(mode, name, args, filter_)` exposes that uninvoked snapshot
+for official-Cordis call sites that must contain failures per listener.
 
 | Mode | Result and ordering |
 |---|---|
@@ -106,6 +108,5 @@ That observer may alter registrations before the public snapshot is selected.
 Events beginning internal/ skip telemetry to prevent recursion. Parallel reports
 mode parallel. Grouped failures include the event name; exception members retain
 their original identities and registration order. The final slot carries the
-Python filter instead of JS thisArg. Listener interception and scoped update,
-plugin/status/service/config producers remain future kernel work. This bus does
-not claim those hooks merely because users can register their names.
+Python filter instead of JS thisArg. Plugin/status/config producers are implemented;
+listener interception plus scoped service/update producers remain future kernel work.

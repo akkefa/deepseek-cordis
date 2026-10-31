@@ -126,7 +126,7 @@ async def test_declared_class_and_callable_instance_dependencies() -> None:
 
     left = await root.plugin(Plugin)
     right = await root.plugin(CallablePlugin())
-    assert left.inject == right.inject == ("database",)
+    assert left.inject == right.inject == {"database": None}
     assert seen == []
     value = object()
     root.provide("database", value)
@@ -140,7 +140,7 @@ async def test_multiple_requirements_all_must_be_available() -> None:
     root = Context()
     seen: list[int] = []
     fiber = await root.inject(["foo", "bar", "foo"], lambda ctx, cfg: seen.append(1))
-    assert fiber.inject == ("foo", "bar")
+    assert fiber.inject == {"foo": None, "bar": None}
     first = root.provide("foo", False)
     await fiber
     assert_state(fiber, FiberState.PENDING)
@@ -498,8 +498,8 @@ async def test_declarations_copied_per_mount_even_for_shared_callback() -> None:
     requirements.append("search")
     second = await root.inject(requirements, callback)
     assert first.runtime is second.runtime
-    assert first.inject == ("database",)
-    assert second.inject == ("database", "search")
+    assert first.inject == {"database": None}
+    assert second.inject == {"database": None, "search": None}
     root.provide("database", object())
     await first
     await second

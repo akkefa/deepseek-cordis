@@ -57,7 +57,9 @@ can activate later through normal service notifications. Long-running setup stil
 needs to finish; the loader does not impose a timeout.
 
 LoadedPlugins.owner and its read-only fibers mapping expose the actual kernel
-Fibers. Calling batch.dispose joins that owner's teardown and is safe to repeat.
+Fibers. Each enabled entry is available as `fiber.entry` before `internal/plugin`
+publication and activation; nested plugins inherit the same entry association.
+Calling batch.dispose joins that owner's teardown and is safe to repeat.
 Disposing the parent also disposes the batch. Multiple loads have separate owners,
 even when their plugin callbacks share runtime records. External consumers may
 react to removal of a batch's providers under ordinary service semantics.

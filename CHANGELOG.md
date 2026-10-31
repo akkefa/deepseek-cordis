@@ -1,17 +1,35 @@
 # Changelog
 
-## 0.2.0 — Unreleased
+## 0.2.0
 
+Breaking changes:
+
+- `Fiber.inject` is now a mutable ordered `dict` mapping each dependency name to its
+  intercept configuration (or `None`), instead of a `tuple[str, ...]` of names.
+  Membership tests and iteration over names still work; code that indexes, compares
+  with a tuple or concatenates it must use `tuple(fiber.inject)`.
+- A waterfall listener that calls its `next_` continuation twice now raises
+  `RuntimeError("next() called multiple times")`. Previously the second call
+  advanced the shared queue and could run the terminal again.
+
+Additions:
+
+- Audited Harness `ce7073d` (vendored Cordis 4.0.6-alpha.1) and Cordis `d8b7ea1`;
+  see `docs/upstream-audit-2026-10-31.md`.
 - Added public `Events.dispatch()` and `Fiber.assert_active()` equivalents of the
   official Cordis APIs while retaining the existing private compatibility surface.
 - Added `internal/plugin` creation/disposal publication and `internal/status`
   transitions with official PENDING-before-activation ordering, mutable dependency
   injection, publication rollback, observer-failure containment and parent/child
   cleanup joining.
-- Added non-publishing `Fiber.resolve_config()`, mutable `raw_config`,
-  `effective_config`, and `internal/config` interception.
+- Added non-publishing `Fiber.resolve_config()`, assignable `raw_config` (also after
+  disposal, as in Harness), `effective_config`, and `internal/config` interception.
 - Loader-created fibers now expose their originating `PluginEntry` as `fiber.entry`
   before publication and activation.
+- Documented the remaining deliberate differences from current Harness: restart can
+  still recover a FAILED Fiber because `Fiber.update()` is not implemented, and
+  intercept configuration includes dependencies added by `internal/plugin`
+  observers.
 
 ## 0.1.2
 

@@ -98,8 +98,9 @@ result = await ctx.waterfall("calculate", 1, next_=lambda: 2)
 ```
 
 Arguments cannot be replaced by next_(new_value). Not calling next vetoes remaining
-listeners and the terminal. Repeated calls advance the same queue and invoke the
-terminal again once exhausted, preserving the pinned source behavior. Async
+listeners and the terminal. Each listener receives its own continuation; calling
+it a second time raises `RuntimeError("next() called multiple times")`, matching
+the guard in Harness `ce7073d` instead of the pinned source's shared queue. Async
 continuations execute when awaited/returned, so calling and dropping an async
 continuation is unsupported and leaves the usual Python unawaited coroutine.
 

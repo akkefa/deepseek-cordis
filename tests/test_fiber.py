@@ -210,6 +210,25 @@ async def test_internal_plugin_can_add_dependency_before_activation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_internal_plugin_added_dependency_applies_intercept_config() -> None:
+    root = Context()
+    root.provide("late-inject", object())
+    seen: list[object] = []
+
+    def add_dependency(fiber: Fiber) -> None:
+        if fiber.name == "intercepted" and fiber.uid is not None:
+            fiber.inject["late-inject"] = {"timeout": 3}
+
+    def intercepted(ctx: Context, config: object) -> None:
+        seen.append(ctx.resolve_config("late-inject"))
+
+    root.on("internal/plugin", add_dependency)
+    await root.plugin(intercepted)
+    assert seen == [{"timeout": 3}]
+    await root.fiber.dispose()
+
+
+@pytest.mark.asyncio
 async def test_internal_plugin_publication_failure_rolls_back_mount() -> None:
     root = Context()
     published: list[Fiber] = []

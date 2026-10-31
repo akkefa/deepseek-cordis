@@ -225,13 +225,23 @@ class Events:
 
         def advance() -> object:
             with self._ctx.scope():
-                result = callbacks.popleft()(*args, continuation) if callbacks else next_()
+                if callbacks:
+                    callback = callbacks.popleft()
+                    called = False
+
+                    def continuation() -> object:
+                        nonlocal called
+                        if called:
+                            raise RuntimeError("next() called multiple times")
+                        called = True
+                        return advance_async() if asynchronous.get() else advance()
+
+                    result = callback(*args, continuation)
+                else:
+                    result = next_()
             return resolve(result) if inspect.isawaitable(result) else result
 
         async def advance_async() -> object:
             return await _resolve(advance())
-
-        def continuation() -> object:
-            return advance_async() if asynchronous.get() else advance()
 
         return advance()

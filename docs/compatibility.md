@@ -16,9 +16,11 @@ provider-cleanup, restart-revision and event-diagnostic fixes, their supplementa
 source-indexed tests, and compatibility risks. The primary target and original
 72-case catalog stay pinned. The
 [2026-10-28 upstream audit](upstream-audit-2026-10-28.md) found no further runtime
-port needed, added two async-generator effect regressions, and defers the Harness
-config-access API (`rawConfig` assignment, `resolveConfig(candidate)`). The current
-full suite contains 417 tests.
+port needed and added two async-generator effect regressions. The
+[2026-10-31 upstream audit](upstream-audit-2026-10-31.md) adopts the Harness
+publication hooks, config-access API (`raw_config` assignment, `effective_config`,
+`resolve_config(candidate)`, `internal/config`) and single-use waterfall
+continuations. The current full suite contains 420 tests.
 
 ## Current behavior matrix
 
@@ -32,7 +34,7 @@ full suite contains 417 tests.
 | inject/reactive reload | Implemented scoped core | Required bindings, startup gating, provider loss/restoration and joined snapshots; generations strengthen source uid epochs |
 | Service | Python adaptation | Named self registration, start/check and native callability; transparent method tracing and prototype extension future |
 | emit/parallel/serial/bail | Python adaptation | Owned listeners, snapshots, explicit filtering, all-settled parallel errors; emit/bail reject awaitables |
-| waterfall | Python adaptation | Fixed arguments, veto and zero-argument continuation; async bridge and pinned repeated-next policy documented |
+| waterfall | Python adaptation | Fixed arguments, veto and zero-argument single-use continuation; async bridge documented |
 | isolate | Explicit Python labels | Scoped slots and shared ScopeLabel; explicit event filtering replaces source thisArg routing |
 | intercept | Explicit configuration layers | Caller ContextVar, config merging and Service.matches_scope; automatic get/set/method interception future |
 | Metadata/decorators | Explicit records | PluginMeta/PluginSpec/plugin-wide decorator; source method @Inject is not implemented |
@@ -78,7 +80,7 @@ uv run mypy src tests examples
 
 The compatibility suites contain 25 behavioral cases in
 tests/compatibility/test_upstream.py and test_harness.py, plus one catalog integrity
-check. The focused selection has 26 cases; the full suite has 417. Source ports include nested plugin listener
+check. The focused selection has 26 cases; the full suite has 420. Source ports include nested plugin listener
 ownership, effect listener trees, ordinary error rollback, Service initialization
 through an event, inactive snapshots, scoped activation, fixed-argument waterfall,
 retained failures/logging, and reentrant parent/effect cleanup barriers.
@@ -106,8 +108,12 @@ retain earlier evidence and counts; this page and the catalog are the current vi
   the first mount. Config adapters raise instead of returning JS schema envelopes.
 - Batch failure rolls back owned mounts, while normal Python imports remain cached
   and module-level side effects cannot be undone.
+- Restart and dependency restoration can retry a FAILED Fiber; current Harness
+  latches failures until `update()`, which Python does not yet provide.
+- Intercept configuration includes dependencies added by `internal/plugin`
+  observers; Harness only intercepts dependencies declared before publication.
 
-Internal/service, internal/listener and internal/update producers/interceptors remain
-future work. Missing async-generator timer scenarios remain explicitly partial. General
+Internal/service, internal/listener, internal/update and internal/commit
+producers/interceptors, plus `Fiber.update()`, remain future work. Missing async-generator timer scenarios remain explicitly partial. General
 background-task ownership, update/persistence, HMR, schema adapters and transparent
 proxy/tracker behavior also remain future work.

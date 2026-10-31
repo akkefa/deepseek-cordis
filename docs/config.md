@@ -43,7 +43,7 @@ be read there. Disposing a mount before activation skips validation entirely.
 
 Every activation, including restart and service restoration, validates the retained
 raw input again. `Fiber.raw_config` preserves that input by identity and may be
-assigned without triggering a reload. `Fiber.config` is raw until validation first
+assigned without triggering a reload, including after disposal. `Fiber.config` is raw until validation first
 succeeds, then retains the last successful resolution. `Fiber.effective_config` is
 `None` before first publication and then identifies the configuration passed to the
 latest successful activation.

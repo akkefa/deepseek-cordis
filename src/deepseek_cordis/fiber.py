@@ -167,7 +167,6 @@ class Fiber:
     @raw_config.setter
     def raw_config(self, config: object) -> None:
         """Retain new raw input without reloading or replacing the running config."""
-        self.assert_active()
         self._raw_config = config
         self._config_revision += 1
 
@@ -287,7 +286,7 @@ class Fiber:
         if old is state:
             return
         self.ctx.emit("internal/status", self, old)
-        if old is not state and (old is FiberState.ACTIVE or state is FiberState.ACTIVE):
+        if old is FiberState.ACTIVE or state is FiberState.ACTIVE:
             self.ctx._services.owner_changed(self)
 
     def _setup_effect(self, epoch: Epoch, revision: int) -> Effect:

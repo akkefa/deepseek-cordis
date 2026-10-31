@@ -145,6 +145,22 @@ async def test_resolve_config_is_nonpublishing_and_raw_assignment_reloads_only_o
 
 
 @pytest.mark.asyncio
+async def test_raw_config_assignment_remains_legal_after_disposal() -> None:
+    root = Context()
+    initial = {"value": 1}
+    fiber = await root.plugin(lambda ctx, config: None, initial)
+    effective = fiber.effective_config
+    await fiber.dispose()
+
+    replacement = {"value": 2}
+    fiber.raw_config = replacement
+    assert fiber.raw_config is replacement
+    assert fiber.effective_config is effective
+    assert fiber.state is FiberState.DISPOSED
+    await root.fiber.dispose()
+
+
+@pytest.mark.asyncio
 async def test_validation_deferred_until_dependencies_available_and_runs_in_mount_scope() -> None:
     calls: list[object] = []
     root = Context()
